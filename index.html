@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Absensi Kelas</title>
+<style>
+:root{--bg:#eef2f6;--card:#fff;--ink:#1d2733;--mute:#6b7785;--line:#d9e0e8;--H:#1f9d55;--S:#d98a00;--I:#2f6fdb;--A:#d0392f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 "Segoe UI",Roboto,Arial,sans-serif}
+header{background:#183153;color:#fff;padding:14px 16px;position:sticky;top:0;z-index:5}
+header h1{margin:0 0 8px;font-size:18px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+input,select,button{font:inherit}
+input[type=date],input[type=month],input[type=number],select{padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+button{padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid #7fb0ff;outline-offset:1px}
+.pri{background:#1f9d55;border-color:#1f9d55;color:#fff}
+main{max-width:760px;margin:0 auto;padding:12px}
+.sum{display:flex;gap:6px;margin:4px 0 12px;flex-wrap:wrap}
+.sum span{padding:4px 10px;border-radius:99px;background:#fff;border:1px solid var(--line);font-size:14px}
+.row{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.nm{font-weight:600}
+.btns{display:flex;gap:6px}
+.btns button{min-width:64px;font-size:14px}
+.btns button.on[data-s=H]{background:var(--H);border-color:var(--H);color:#fff}
+.btns button.on[data-s=S]{background:var(--S);border-color:var(--S);color:#fff}
+.btns button.on[data-s=I]{background:var(--I);border-color:var(--I);color:#fff}
+.btns button.on[data-s=A]{background:var(--A);border-color:var(--A);color:#fff}
+.reason{width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:6px}
+details{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:14px}
+summary{cursor:pointer;font-weight:600}
+.g{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+textarea{width:100%;height:180px;padding:8px;border:1px solid var(--line);border-radius:6px;font:inherit}
+.empty{padding:24px;text-align:center;color:var(--mute)}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#183153;color:#fff;padding:9px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+@media(max-width:480px){.btns{width:100%}.btns button{flex:1;min-width:0}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Absensi Kelas</h1>
+  <div class="bar">
+    <input type="date" id="tgl" aria-label="Tanggal absen">
+    <button id="hariIni">Hari ini</button>
+    <button id="semuaHadir" class="pri">Semua hadir</button>
+  </div>
+</header>
+<main>
+  <div class="sum" id="sum"></div>
+  <div id="list"></div>
+
+  <details>
+    <summary>Ekspor ke Excel</summary>
+    <div class="g"><button id="exHari">Harian (tanggal terpilih)</button></div>
+    <div class="g"><input type="month" id="bln"><button id="exBln">Ekspor bulanan</button></div>
+    <div class="g">
+      <select id="sem"><option value="1">Semester Ganjil (Jul–Des)</option><option value="2">Semester Genap (Jan–Jun)</option></select>
+      <input type="number" id="thn" style="width:90px" aria-label="Tahun">
+      <button id="exSem">Ekspor semester</button>
+    </div>
+  </details>
+
+  <details>
+    <summary>Daftar siswa</summary>
+    <p style="color:var(--mute);margin:8px 0">Satu nama per baris. Menghapus nama tidak menghapus riwayat absen lama.</p>
+    <textarea id="names" placeholder="Andi Pratama&#10;Budi Santoso&#10;Citra Lestari"></textarea>
+    <div class="g"><button id="saveNames" class="pri">Simpan daftar</button></div>
+  </details>
+
+  <details>
+    <summary>Cadangan data</summary>
+    <p style="color:var(--mute);margin:8px 0">Data tersimpan di browser komputer ini. Unduh cadangan secara berkala, terutama sebelum membersihkan riwayat browser.</p>
+    <div class="g"><button id="bak">Unduh cadangan</button><input type="file" id="res" accept=".json"></div>
+  </details>
+</main>
+<div id="toast"></div>
+
+<script>
+const K='absensi_kelas_v1', L={H:'Hadir',S:'Sakit',I:'Izin',A:'Alpa'};
+let db={students:[],rec:{}};
+try{const x=JSON.parse(localStorage.getItem(K));if(x&&x.students&&x.rec)db=x}catch(e){}
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const today=()=>ymd(new Date());
+let date=today(), auto=true;
+
+function persist(){try{localStorage.setItem(K,JSON.stringify(db))}catch(e){toast('Gagal menyimpan. Unduh cadangan segera.')}}
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200)}
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function render(){
+  $('tgl').value=date;
+  const day=db.rec[date]||{}, box=$('list');
+  if(!db.students.length){box.innerHTML='<div class="empty">Belum ada siswa. Buka "Daftar siswa" di bawah untuk menambahkan.</div>';$('sum').innerHTML='';return}
+  box.innerHTML=db.students.map((s,i)=>{
+    const r=day[s.id], st=r&&r.s;
+    return `<div class="row"><div class="top"><span class="nm">${i+1}. ${esc(s.name)}</span>
+    <div class="btns">${Object.keys(L).map(k=>`<button data-id="${s.id}" data-s="${k}" class="${st===k?'on':''}">${L[k]}</button>`).join('')}</div></div>
+    ${st&&st!=='H'?`<input class="reason" data-id="${s.id}" placeholder="Alasan ${L[st].toLowerCase()}…" value="${esc(r.r)}">`:''}</div>`}).join('');
+  counts();
+}
+function counts(){
+  const day=db.rec[date]||{}, c={H:0,S:0,I:0,A:0}; let n=0;
+  db.students.forEach(s=>{const r=day[s.id];if(r){c[r.s]++;n++}});
+  $('sum').innerHTML=Object.keys(L).map(k=>`<span>${L[k]}: <b>${c[k]}</b></span>`).join('')+`<span>Belum diisi: <b>${db.students.length-n}</b></span>`;
+}
+function setStatus(id,s){
+  const day=db.rec[date]=db.rec[date]||{}, st=db.students.find(x=>x.id===id);
+  const keep=day[id]&&day[id].s===s;
+  if(keep){delete day[id];if(!Object.keys(day).length)delete db.rec[date]}
+  else day[id]={n:st.name,s,r:(day[id]&&s!=='H')?day[id].r:''};
+  persist();render();
+}
+$('list').addEventListener('click',e=>{const b=e.target.closest('button[data-id]');if(b)setStatus(+b.dataset.id,b.dataset.s)});
+$('list').addEventListener('input',e=>{
+  if(e.target.classList.contains('reason')){const r=(db.rec[date]||{})[+e.target.dataset.id];if(r){r.r=e.target.value;persist()}}
+});
+$('tgl').addEventListener('change',e=>{if(e.target.value){date=e.target.value;auto=(date===today());render()}});
+$('hariIni').onclick=()=>{date=today();auto=true;render()};
+$('semuaHadir').onclick=()=>{
+  const day=db.rec[date]=db.rec[date]||{};
+  db.students.forEach(s=>{if(!day[s.id])day[s.id]={n:s.name,s:'H',r:''}});
+  persist();render();toast('Yang belum diisi ditandai hadir')};
+// keep "today" fresh if the page stays open overnight
+setInterval(()=>{if(auto&&date!==today()){date=today();render()}},60000);
+
+// student list
+function fillNames(){$('names').value=db.students.map(s=>s.name).join('\n')}
+$('saveNames').onclick=()=>{
+  const names=$('names').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  let next=Math.max(0,...db.students.map(s=>s.id))+1;
+  const old=new Map(db.students.map(s=>[s.name.toLowerCase(),s]));
+  db.students=names.map(n=>old.get(n.toLowerCase())||{id:next++,name:n});
+  persist();render();toast('Daftar siswa disimpan')};
+
+// export
+function download(name,html){
+  const blob=new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function exportRange(from,to,title,file){
+  const dates=Object.keys(db.rec).filter(d=>d>=from&&d<=to).sort();
+  if(!dates.length){toast('Tidak ada data absen pada periode ini');return}
+  const stat={};
+  const get=(id,n)=>stat[id]=stat[id]||{n,H:0,S:0,I:0,A:0};
+  db.students.forEach(s=>get(s.id,s.name));
+  const det=[];
+  dates.forEach(d=>Object.entries(db.rec[d]).forEach(([id,r])=>{get(id,r.n)[r.s]++;det.push([d,r.n,L[r.s],r.r||''])}));
+  const days=dates.length;
+  let h=`<html><head><meta charset="utf-8"></head><body><h3>${esc(title)}</h3><p>Jumlah hari absen: ${days}</p>
+  <table border="1"><tr><th>No</th><th>Nama</th><th>Hadir</th><th>Sakit</th><th>Izin</th><th>Alpa</th><th>% Hadir</th></tr>`;
+  Object.values(stat).forEach((s,i)=>{h+=`<tr><td>${i+1}</td><td>${esc(s.n)}</td><td>${s.H}</td><td>${s.S}</td><td>${s.I}</td><td>${s.A}</td><td>${(100*s.H/days).toFixed(1)}%</td></tr>`});
+  h+=`</table><br><h3>Rincian</h3><table border="1"><tr><th>Tanggal</th><th>Nama</th><th>Status</th><th>Keterangan</th></tr>`;
+  det.forEach(r=>{h+='<tr>'+r.map(x=>`<td>${esc(x)}</td>`).join('')+'</tr>'});
+  download(file+'.xls',h+'</table></body></html>');
+}
+$('exHari').onclick=()=>exportRange(date,date,'Absensi tanggal '+date,'absensi-'+date);
+$('exBln').onclick=()=>{const m=$('bln').value;if(!m)return toast('Pilih bulan dulu');
+  exportRange(m+'-01',m+'-31','Absensi bulan '+m,'absensi-'+m)};
+$('exSem').onclick=()=>{const y=+$('thn').value,g=$('sem').value==='1';if(!y)return toast('Isi tahun dulu');
+  exportRange(g?y+'-07-01':y+'-01-01',g?y+'-12-31':y+'-06-30',`Absensi semester ${g?'Ganjil':'Genap'} ${y}`,`absensi-semester-${g?'ganjil':'genap'}-${y}`)};
+
+// backup
+$('bak').onclick=()=>{const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(db)],{type:'application/json'}));
+  a.download='cadangan-absensi-'+today()+'.json';document.body.appendChild(a);a.click();a.remove()};
+$('res').onchange=e=>{const f=e.target.files[0];if(!f)return;
+  f.text().then(t=>{const x=JSON.parse(t);if(!x.students||!x.rec)throw 0;
+    if(confirm('Ganti semua data sekarang dengan cadangan ini?')){db=x;persist();fillNames();render();toast('Data dipulihkan')}})
+  .catch(()=>toast('File cadangan tidak valid'));e.target.value=''};
+
+// init
+const n=new Date();$('bln').value=n.getFullYear()+'-'+pad(n.getMonth()+1);
+$('thn').value=n.getFullYear();$('sem').value=n.getMonth()>=6?'1':'2';
+fillNames();render();
+</script>
+</body>
+</html>
